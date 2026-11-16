@@ -1,0 +1,23 @@
+<ion-header><ion-toolbar><ion-title>EVA douleur</ion-title></ion-toolbar></ion-header>
+<ion-content class="ion-padding">
+  <ion-button expand="block" (click)="capture()">Photographier l'échelle</ion-button>
+
+  <ng-container *ngIf="r">
+    <canvas #cv style="width:100%"></canvas>
+
+    <ion-card>
+      <ion-card-content>
+        <h1>{{ cm }} / 10 cm ({{ pct }} %)</h1>
+      </ion-card-content>
+    </ion-card>
+
+    <ion-list>
+      <ion-item><ion-label position="stacked">Début (vert)</ion-label>
+        <ion-range [min]="0" [max]="width" [(ngModel)]="r.left" (ionChange)="refresh()"></ion-range></ion-item>
+      <ion-item><ion-label position="stacked">Fin (vert)</ion-label>
+        <ion-range [min]="0" [max]="width" [(ngModel)]="r.right" (ionChange)="refresh()"></ion-range></ion-item>
+      <ion-item><ion-label position="stacked">Trait patient (rouge)</ion-label>
+        <ion-range [min]="0" [max]="width" [(ngModel)]="r.mark" (ionChange)="refresh()"></ion-range></ion-item>
+    </ion-list>
+  </ng-container>
+</ion-content>
