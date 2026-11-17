@@ -1,23 +1,38 @@
 <ion-header><ion-toolbar><ion-title>EVA douleur</ion-title></ion-toolbar></ion-header>
 <ion-content class="ion-padding">
-  <ion-button expand="block" (click)="capture()">Photographier l'échelle</ion-button>
+  <ion-button expand="block" [disabled]="busy" (click)="capture()">Photographier l'échelle</ion-button>
+  <p *ngIf="error" role="alert">{{ error }}</p>
 
-  <ng-container *ngIf="r">
-    <canvas #cv style="width:100%"></canvas>
+  <div [hidden]="!hasImage">
+    <ion-item>
+      <ion-toggle [(ngModel)]="useFilter" (ionChange)="analyze()">Utiliser le passe-haut pour détecter</ion-toggle>
+    </ion-item>
+    <p>{{ useFilter ? 'Détection avec passe-haut' : 'Bypass : détection sans passe-haut' }}. Changer ce réglage recalcule les repères et remplace les corrections manuelles.</p>
+    <ion-segment [(ngModel)]="view" (ionChange)="refresh()">
+      <ion-segment-button value="original"><ion-label>Originale</ion-label></ion-segment-button>
+      <ion-segment-button value="filtered"><ion-label>Passe-haut</ion-label></ion-segment-button>
+      <ion-segment-button value="mask"><ion-label>Noir/blanc</ion-label></ion-segment-button>
+    </ion-segment>
+    <p>La vue change seulement l'affichage. Noir/blanc montre le masque exact utilisé par la détection. Passe-haut reste consultable même en bypass.</p>
+    <ion-item>
+      <ion-toggle [(ngModel)]="showMarkers" (ionChange)="refresh()">Afficher les repères</ion-toggle>
+    </ion-item>
+    <canvas #cv style="width:100%;height:auto"></canvas>
 
-    <ion-card>
-      <ion-card-content>
-        <h1>{{ cm }} / 10 cm ({{ pct }} %)</h1>
-      </ion-card-content>
-    </ion-card>
-
-    <ion-list>
-      <ion-item><ion-label position="stacked">Début (vert)</ion-label>
-        <ion-range [min]="0" [max]="width" [(ngModel)]="r.left" (ionChange)="refresh()"></ion-range></ion-item>
-      <ion-item><ion-label position="stacked">Fin (vert)</ion-label>
-        <ion-range [min]="0" [max]="width" [(ngModel)]="r.right" (ionChange)="refresh()"></ion-range></ion-item>
-      <ion-item><ion-label position="stacked">Trait patient (rouge)</ion-label>
-        <ion-range [min]="0" [max]="width" [(ngModel)]="r.mark" (ionChange)="refresh()"></ion-range></ion-item>
-    </ion-list>
-  </ng-container>
+    <p *ngIf="!r && !error" role="status">Détection impossible avec ce réglage. Aucun résultat calculé. Comparez les vues ou changez le filtre.</p>
+    <ng-container *ngIf="r as result">
+      <ion-card *ngIf="cm !== null">
+        <ion-card-content><h1>{{ cm }} / 10 cm ({{ pct }} %)</h1><p>À vérifier sur la photo.</p></ion-card-content>
+      </ion-card>
+      <p *ngIf="result.right <= result.left" role="alert">La fin doit être placée après le début.</p>
+      <ion-list>
+        <ion-item><ion-label position="stacked">Début (vert)</ion-label>
+          <ion-range [min]="0" [max]="width - 1" [(ngModel)]="result.left" (ionChange)="refresh()"></ion-range></ion-item>
+        <ion-item><ion-label position="stacked">Fin (vert)</ion-label>
+          <ion-range [min]="0" [max]="width - 1" [(ngModel)]="result.right" (ionChange)="refresh()"></ion-range></ion-item>
+        <ion-item><ion-label position="stacked">Trait patient (rouge)</ion-label>
+          <ion-range [min]="0" [max]="width - 1" [(ngModel)]="result.mark" (ionChange)="refresh()"></ion-range></ion-item>
+      </ion-list>
+    </ng-container>
+  </div>
 </ion-content>

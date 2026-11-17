@@ -1,6 +1,11 @@
 import { Injectable } from '@angular/core';
 
 export interface EvaResult { left: number; right: number; mark: number; lineY: number; }
+export interface EvaAnalysis {
+  result: EvaResult | null;
+  filtered: HTMLCanvasElement;
+  mask: HTMLCanvasElement;
+}
 
 @Injectable({ providedIn: 'root' })
 export class EvaService {
@@ -17,22 +22,55 @@ export class EvaService {
     return c;
   }
 
-  detect(c: HTMLCanvasElement): EvaResult | null {
+  detect(c: HTMLCanvasElement, useFilter = false): EvaResult | null {
+    return this.analyze(c, useFilter).result;
+  }
+
+  analyze(c: HTMLCanvasElement, useFilter = false): EvaAnalysis {
     const W = c.width, H = c.height;
-    if (W < 8 || H < 8) return null;
-    const d = c.getContext('2d')!.getImageData(0, 0, W, H).data;
+    if (!W || !H) throw new Error('Image vide');
+    const data = c.getContext('2d')!.getImageData(0, 0, W, H).data;
     const gray = new Uint8Array(W * H);
     for (let i = 0; i < gray.length; i++) {
-      gray[i] = Math.round(d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114);
+      gray[i] = Math.round(data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114);
     }
-    const g = this.highPassDarkLines(gray, W, H);
-    let min = 255, maxValue = 0;
-    for (const value of g) { min = Math.min(min, value); maxValue = Math.max(maxValue, value); }
-    if (maxValue - min < 12) return null;
-    const threshold = this.otsu(g);
-    const dark = (x: number, y: number): boolean =>
-      x >= 0 && x < W && y >= 0 && y < H && g[y * W + x] <= threshold && g[y * W + x] < 243;
+    const filtered = this.highPassDarkLines(gray, W, H);
+    const input = useFilter ? filtered : gray;
+    let min = 255, max = 0;
+    for (const value of input) { min = Math.min(min, value); max = Math.max(max, value); }
+    const mask = new Uint8Array(input.length);
+    if (max - min >= 12) {
+      const threshold = this.otsu(input);
+      for (let i = 0; i < input.length; i++) {
+        mask[i] = input[i] <= threshold && input[i] < 243 ? 1 : 0;
+      }
+    }
+    const maskGray = new Uint8Array(mask.length);
+    for (let i = 0; i < mask.length; i++) maskGray[i] = mask[i] ? 0 : 255;
+    return {
+      result: this.detectMask(mask, W, H),
+      filtered: this.toCanvas(filtered, W, H),
+      mask: this.toCanvas(maskGray, W, H)
+    };
+  }
 
+  private toCanvas(gray: Uint8Array, width: number, height: number): HTMLCanvasElement {
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d')!;
+    const image = ctx.createImageData(width, height);
+    for (let i = 0; i < gray.length; i++) {
+      image.data[i * 4] = image.data[i * 4 + 1] = image.data[i * 4 + 2] = gray[i];
+      image.data[i * 4 + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }
+
+  private detectMask(mask: Uint8Array, W: number, H: number): EvaResult | null {
+    if (W < 8 || H < 8) return null;
+    const dark = (x: number, y: number): boolean =>
+      x >= 0 && x < W && y >= 0 && y < H && mask[y * W + x] === 1;
     const rows = new Uint32Array(H);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (dark(x, y)) rows[y]++;
     let lineY = 3, best = 0;
@@ -84,8 +122,6 @@ export class EvaService {
     return pick ? { left, right, mark: pick.x, lineY } : null;
   }
 
-  // Signed high-pass = gray - local mean. Keep only dark features,
-  // then invert to preserve the detector's dark-on-white convention.
   private highPassDarkLines(gray: Uint8Array, width: number, height: number, radius = 12, gain = 3): Uint8Array {
     const horizontal = new Float32Array(gray.length);
     const result = new Uint8Array(gray.length);
@@ -112,8 +148,8 @@ export class EvaService {
         }
         const size = Math.min(height - 1, y + radius) - Math.max(0, y - radius) + 1;
         const i = y * width + x;
-        const darkResponse = Math.max(0, sum / size - gray[i]);
-        result[i] = Math.round(255 - Math.min(255, gain * darkResponse));
+        const response = Math.max(0, sum / size - gray[i]);
+        result[i] = Math.round(255 - Math.min(255, gain * response));
       }
     }
     return result;

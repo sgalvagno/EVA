@@ -1,40 +1,77 @@
 import { Component, ElementRef, ViewChild } from '@angular/core';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
-import { EvaService, EvaResult } from '../eva.service';
+import { EvaService, EvaResult, EvaAnalysis } from '../eva.service';
 
 @Component({ selector: 'app-home', templateUrl: 'home.page.html', standalone: false })
 export class HomePage {
-  @ViewChild('cv') cv!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('cv', { static: true }) cv!: ElementRef<HTMLCanvasElement>;
   r: EvaResult | null = null;
   width = 0;
-  pct = 0; cm = 0;
-  private src!: HTMLCanvasElement;
+  pct: number | null = null;
+  cm: number | null = null;
+  hasImage = false;
+  busy = false;
+  useFilter = false;
+  showMarkers = true;
+  view: 'original' | 'filtered' | 'mask' = 'original';
+  error = '';
+  private src: HTMLCanvasElement | null = null;
+  private analysis: EvaAnalysis | null = null;
 
   constructor(private eva: EvaService) {}
 
   async capture() {
-    const p = await Camera.getPhoto({
-      quality: 90, resultType: CameraResultType.DataUrl, source: CameraSource.Camera,
-    });
-    this.src = await this.eva.load(p.dataUrl!);
-    this.width = this.src.width;
-    this.r = this.eva.detect(this.src) ?? {
-      left: this.width * 0.1, right: this.width * 0.9, mark: this.width * 0.5, lineY: this.src.height / 2,
-    };
-    setTimeout(() => this.refresh());
+    this.busy = true;
+    this.error = '';
+    try {
+      const p = await Camera.getPhoto({
+        quality: 90, resultType: CameraResultType.DataUrl, source: CameraSource.Camera,
+      });
+      if (!p.dataUrl) return;
+      const source = await this.eva.load(p.dataUrl);
+      this.src = source;
+      this.width = source.width;
+      this.hasImage = true;
+      this.analyze();
+    } catch {
+      this.error = 'Photo non chargee : prise annulee ou erreur de camera.';
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  analyze() {
+    if (!this.src) return;
+    this.r = null;
+    this.analysis = null;
+    this.pct = this.cm = null;
+    this.error = '';
+    try {
+      this.analysis = this.eva.analyze(this.src, this.useFilter);
+      this.r = this.analysis.result ? { ...this.analysis.result } : null;
+    } catch {
+      this.error = 'Erreur pendant le traitement de la photo.';
+    }
+    this.refresh();
   }
 
   refresh() {
-    if (!this.r) return;
-    const c = this.cv.nativeElement, ctx = c.getContext('2d')!;
+    if (!this.src) return;
+    const c = this.cv.nativeElement;
+    const ctx = c.getContext('2d')!;
     c.width = this.src.width; c.height = this.src.height;
-    ctx.drawImage(this.src, 0, 0);
+    const image = this.view === 'filtered' ? this.analysis?.filtered
+      : this.view === 'mask' ? this.analysis?.mask : this.src;
+    ctx.drawImage(image ?? this.src, 0, 0);
+    this.pct = this.cm = null;
+    if (!this.r || this.r.right <= this.r.left) return;
+    ({ pct: this.pct, cm: this.cm } = this.eva.compute(this.r));
+    if (!this.showMarkers) return;
     const { left, right, mark, lineY } = this.r;
-    const v = (x: number, col: string) => {
-      ctx.strokeStyle = col; ctx.lineWidth = 3;
+    const vertical = (x: number, color: string) => {
+      ctx.strokeStyle = color; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(x, lineY - 80); ctx.lineTo(x, lineY + 80); ctx.stroke();
     };
-    v(left, 'lime'); v(right, 'lime'); v(mark, 'red');
-    ({ pct: this.pct, cm: this.cm } = this.eva.compute(this.r));
+    vertical(left, 'lime'); vertical(right, 'lime'); vertical(mark, 'red');
   }
 }
