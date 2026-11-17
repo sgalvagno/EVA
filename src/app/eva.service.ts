@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { followEvaBaseline } from './eva-trace';
 
 export interface EvaResult { left: number; right: number; mark: number; lineY: number; }
 export interface EvaAnalysis {
@@ -93,33 +94,7 @@ export class EvaService {
       } else if (start >= 0 && ++gap > 6) { start = -1; gap = 0; }
     }
     if (right - left < W * 0.3) return null;
-    const reach = Math.round((right - left) * 0.08), skip = 5;
-    const score = new Uint32Array(W);
-    let maxScore = 0;
-    for (let x = left; x <= right; x++) {
-      let count = 0;
-      for (let k = skip; k < reach; k++) {
-        if (dark(x, lineY - k)) count++;
-        if (dark(x, lineY + k)) count++;
-      }
-      score[x] = count;
-      maxScore = Math.max(maxScore, count);
-    }
-    if (!maxScore || maxScore < reach * 0.5) return null;
-    const clusters: { x: number; s: number }[] = [];
-    let sumX = 0, countX = 0, peak = 0;
-    for (let x = left; x <= right + 1; x++) {
-      if (x <= right && score[x] > maxScore * 0.5) {
-        sumX += x; countX++; peak = Math.max(peak, score[x]);
-      } else if (countX) {
-        clusters.push({ x: sumX / countX, s: peak });
-        sumX = 0; countX = 0; peak = 0;
-      }
-    }
-    const margin = (right - left) * 0.015;
-    const inner = clusters.filter(k => k.x > left + margin && k.x < right - margin);
-    const pick = (inner.length ? inner : clusters).sort((a, b) => b.s - a.s)[0];
-    return pick ? { left, right, mark: pick.x, lineY } : null;
+    return followEvaBaseline(mask, W, H, { left, right, lineY });
   }
 
   private highPassDarkLines(gray: Uint8Array, width: number, height: number, radius = 12, gain = 3): Uint8Array {
